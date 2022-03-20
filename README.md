@@ -45,8 +45,8 @@ const redisStore = new RedisStore(
                 field: 'balance',
                 type: RedisStore.INDEX.RANGE, // range index: you will able to find documents between specific values
             },
-            // you can documents with any other properties you want
-            // but you will not able to search by that fields
+            // you can insert documents with any other properties you want
+            // but you will not able to search over that fields
         ],
         // remember that all properties will be converted to strings by Redis
         // so you can use OhMyProps to convert documents coming from Redis
@@ -69,7 +69,7 @@ const redisStore = new RedisStore(
 );
 ```
 
-### Adding new documents
+### Add documents
 
 ```javascript
 // you can insert one document
@@ -101,11 +101,11 @@ await redisStore.insertMany([
 
 You can add special property `_ttl` to document to limit lifetime of that document in seconds. By now, RedisStore **does not guarantee** that you will never get expired documents from RedisStore in order to achieve high performance.
 
-### Finding documents
+### Find documents
 
-You can find documents using this method. It accepts an object with properties `filter`, `order`, `offset` and `count`.
+You can find documents using method `.find()`. It accepts an object with properties `filter`, `order`, `offset` and `count`.
 
-#### Using `filter`
+#### Filter
 
 Describe properties' values to find documents. Multiple properties will be combined using AND logical operation.
 
@@ -118,6 +118,7 @@ await redisStore.find({
 });
 // -> [{ user_id: 1, user_name: 'heavydog', balance: 10 }]
 
+// SQL equivalent: WHERE user_id = 1 AND balance = 123
 await redisStore.find({
     filter: {
         user_id: 1,
@@ -130,6 +131,7 @@ await redisStore.find({
 You can use `$in` to query by many values at once. `$in` is available only on `UNIQUE` and `HASH` indexes.
 
 ```javascript
+// SQL equivalent: WHERE user_id IN (1, 4, 10)
 await redisStore.find({
     user_id: {
         $in: [ 1, 4, 10 ],
@@ -142,7 +144,7 @@ await redisStore.find({
 To find documents by `RANGE` index, use `$gt`, `$gte`, `$lt` and `$lte`.
 
 ```javascript
-// let's find users with balances from 12 (inclusive) to 53 (exclusive)
+// let's find users with balance from 12 (inclusive) to 53 (exclusive)
 await redisStore.find({
     balance: {
         $gte: 12,
@@ -155,9 +157,9 @@ await redisStore.find({
 
 By now you **can not** build complex filters using `and` / `or` / `not` or other logical operations.
 
-By now you **can not** perform filtering by non-indexed fields.
+By now you **can not** find documents by non-indexed fields.
 
-#### Using `order`
+#### Order
 
 It's easy to order documents by field with `RANGE` index:
 
@@ -174,11 +176,11 @@ await redisStore.find({
 //     { user_id: 1, user_name: 'heavydog'   , balance: 10 }]
 ```
 
-By now you **can not** order document by more than **one field**.
+By now you **can not** order documents by more than **one field**.
 
-#### Using `offset` and `count`
+#### Offset and count
 
-You can set **offset** and **count** to get only few documents:
+You can limit the range of documents you want to get:
 
 ```javascript
 // let's find all document but ordered by date of registration from newest ones:
@@ -195,7 +197,7 @@ await redisStore.find({
 
 Note: by default, `count` is equal to 1000. Set it to `-1` to get all matching documents.
 
-### Counting documents
+### Count documents
 
 Use `.count()` method to get count of matching documents. This method accepts `filter` object itself.
 
@@ -213,7 +215,7 @@ await redisStore.count({
 // -> 2
 ```
 
-### Deleting documents
+### Delete documents
 
 To delete documents you should find them using properties of `.find()` method.
 
