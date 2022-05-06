@@ -3,7 +3,7 @@
 
 Store you data in Redis and get it using indexes.
 
-That package designed to help you to build a database using Redis' commands and some simple Lua scripts. You can store documents similar to MongoDB, you can find them, order and perform simple aggregations. It can be used, for example, to store and query some logs.
+That package designed to help you to build a database using Redis' commands and some simple Lua scripts. You can store documents similar to MongoDB, you can find them, sort and perform simple aggregations. It can be used, for example, to store and query some logs.
 
 Redis server will know nothing about your database: schema of your database is only described at redis client.
 
@@ -103,7 +103,7 @@ You can add special property `_ttl` to document to limit lifetime of that docume
 
 ### Find documents
 
-You can find documents using method `.find()`. It accepts an object with properties `filter`, `order`, `offset` and `count`.
+You can find documents using method `.find()`. It accepts an object with properties `filter`, `sort`, `offset` and `count`.
 
 #### Filter
 
@@ -159,15 +159,15 @@ By now you **can not** build complex filters using `and` / `or` / `not` or other
 
 By now you **can not** find documents by non-indexed fields.
 
-#### Order
+#### Sort
 
-It's easy to order documents by field with `RANGE` index:
+It's easy to sort documents by field with `RANGE` index:
 
 ```javascript
-// let's find all document ordered by date of registration from newest ones:
+// let's find all document sorted by date of registration from newest ones:
 await redisStore.find({
-    order: {
-        balance: -1, // set 1 to order ascending, -1 for descending
+    sort: {
+        balance: -1, // set 1 to sort ascending, -1 for descending
     },
 });
 // -> [{ user_id: 3, user_name: 'sadmeercat' , balance: 53 },
@@ -176,16 +176,16 @@ await redisStore.find({
 //     { user_id: 1, user_name: 'heavydog'   , balance: 10 }]
 ```
 
-By now you **can not** order documents by more than **one field**.
+By now you **can not** sort documents by more than **one field**.
 
 #### Offset and count
 
 You can limit the range of documents you want to get:
 
 ```javascript
-// let's find all document but ordered by date of registration from newest ones:
+// let's find all document but sorted by date of registration from newest ones:
 await redisStore.find({
-    order: {
+    sort: {
         balance: -1,
     },
     offset: 1, // skip 1 document

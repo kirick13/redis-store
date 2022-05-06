@@ -17,6 +17,7 @@ const { hasOwnProperty,
         parseHashedValue }         = require('./fns');
 const INDEX                        = require('./indexes');
 const createScripts                = require('./scripts');
+const Timing                       = require('./timing');
 const TemporaryKeys                = require('./temporary-keys');
 
 const schemaProps = new OhMyProps({
@@ -206,7 +207,7 @@ class RedisStore {
     async _find (
         {
             filter = {},
-            order = {},
+            sort = {},
             offset = 0,
             count = null,
         },
@@ -222,8 +223,11 @@ class RedisStore {
 
         const multi = redisClient.MULTI();
 
-        const inter_keys = [];
-        const inter_weights = [];
+        const timing = new Timing(multi);
+
+        // const inter_keys = [];
+        // const inter_weights = [];
+        const inter = [];
 
         // filter
         for (const [ field, value ] of Object.entries(filter)) {
@@ -231,7 +235,7 @@ class RedisStore {
                 case INDEX.UNIQUE: {
                     const values = parseHashedValue(value);
                     if (values.size === 0) {
-                        throw new TypeError(`Invalid filter syntax for field ${field}.`);
+                        throw new TypeError(`Invalid filter syntax for field "${field}".`);
                     }
 
                     const tmp_key_local = temporaryKeys.create();
@@ -244,23 +248,36 @@ class RedisStore {
                         ...values,
                     );
 
-                    inter_keys.push(tmp_key_local);
-                    inter_weights.push(0);
+                    timing.add(`index-unique.${field}`);
+
+                    // inter_keys.push(tmp_key_local);
+                    // inter_weights.push(0);
+                    inter.push(
+                        'S',
+                        tmp_key_local,
+                    );
                 } break;
                 case INDEX.HASH: {
                     const values = parseHashedValue(value);
 
                     switch (values.size) {
                         case 0:
-                            throw new TypeError(`Invalid filter syntax for field ${field}.`);
+                            throw new TypeError(`Invalid filter syntax for field "${field}".`);
                         case 1:
-                            inter_keys.push(
+                            // inter_keys.push(
+                            //     this._getRedisKeyIndex(
+                            //         field,
+                            //         getElement(values),
+                            //     ),
+                            // );
+                            // inter_weights.push(0);
+                            inter.push(
+                                'S',
                                 this._getRedisKeyIndex(
                                     field,
                                     getElement(values),
                                 ),
                             );
-                            inter_weights.push(0);
                         break;
                         default: {
                             const keys = [];
@@ -270,99 +287,167 @@ class RedisStore {
                                 );
                             }
 
-                            const tmp_key_local = temporaryKeys.create();
-
-                            multi.ZUNIONSTORE(
-                                tmp_key_local,
+                            inter.push(
+                                'SU',
                                 keys.length,
                                 ...keys,
                             );
 
-                            inter_keys.push(tmp_key_local);
-                            inter_weights.push(0);
+                            // const tmp_key_local = temporaryKeys.create();
+
+                            // multi.SUNIONSTORE(
+                            //     tmp_key_local,
+                            //     keys.length,
+                            //     ...keys,
+                            // );
+
+                            // timing.add(`index-hash.${field}`);
+
+                            // inter_keys.push(tmp_key_local);
+                            // inter_weights.push(0);
                         }
                     }
                 } break;
                 case INDEX.RANGE: {
-                    let lower = '-inf';
-                    let upper = '+inf';
+                    // let lower = '-inf';
+                    // let upper = '+inf';
+                    let lower_type = '';
+                    let lower_value = 0;
+                    let upper_type = '';
+                    let upper_value = 0;
 
                     if (isPlainObject(value)) {
                         if (hasOwnProperty(value, '$gt')) {
-                            lower = '(' + value.$gt;
+                            // lower = '(' + value.$gt;
+                            lower_type = 'E';
+                            lower_value = value.$gt;
                         }
                         else if (hasOwnProperty(value, '$gte')) {
-                            lower = value.$gte;
+                            // lower = value.$gte;
+                            lower_type = 'I';
+                            lower_value = value.$gte;
                         }
 
                         if (hasOwnProperty(value, '$lt')) {
-                            upper = '(' + value.$lt;
+                            // upper = '(' + value.$lt;
+                            upper_type = 'E';
+                            upper_value = value.$lt;
                         }
                         else if (hasOwnProperty(value, '$lte')) {
-                            upper = value.$lte;
+                            // upper = value.$lte;
+                            upper_type = 'I';
+                            upper_value = value.$lte;
                         }
                     }
+                    else if (typeof value === 'number') {
+                        // lower = value;
+                        // upper = value;
+                        lower_type = 'I';
+                        lower_value = value;
+                        upper_type = 'I';
+                        upper_value = value;
+                    }
                     else {
-                        lower = value;
-                        upper = value;
+                        throw new TypeError(`Invalid filter syntax for field "${field}".`);
                     }
 
-                    const tmp_key_local = temporaryKeys.create();
+                    // const tmp_key_local = temporaryKeys.create();
 
-                    multi.ZRANGESTORE(
-                        tmp_key_local,
+                    // multi.ZRANGESTORE(
+                    //     tmp_key_local,
+                    //     this._getRedisKeyIndex(field),
+                    //     lower,
+                    //     upper,
+                    //     'BYSCORE',
+                    // );
+
+                    // timing.add(`index-range.${field}`);
+
+                    // inter_keys.push(
+                    //     tmp_key_local,
+                    // );
+                    // inter_weights.push(0);
+                    inter.push(
+                        'ZR',
                         this._getRedisKeyIndex(field),
-                        lower,
-                        upper,
-                        'BYSCORE',
+                        lower_type,
+                        lower_value,
+                        upper_type,
+                        upper_value,
                     );
-
-                    inter_keys.push(
-                        tmp_key_local,
-                    );
-                    inter_weights.push(0);
                 } break;
                 default:
                     throw new Error('Cannot find documents by non-indexed field.');
             }
         }
 
+        let sort_key;
         let sort_direction;
-        // order
-        if (isPlainObject(order)) {
-            const order_entries = Object.entries(order);
-            if (order_entries.length > 0) {
-                if (order_entries.length > 1) {
-                    throw new Error('Cannot order document by more than one field.');
+        // sort
+        // if (isPlainObject(sort)) {
+        //     const sort_entries = Object.entries(sort);
+        //     if (sort_entries.length > 0) {
+        //         if (sort_entries.length > 1) {
+        //             throw new Error('Cannot sort document by more than one field.');
+        //         }
+
+        //         let sort_field;
+        //         [ sort_field, sort_direction ] = sort_entries[0];
+
+        //         // inter_keys.push(
+        //         //     this._getRedisKeyIndex(sort_field),
+        //         // );
+        //         // inter_weights.push(1);
+        //     }
+        // }
+        if (isPlainObject(sort)) {
+            const sort_entries = Object.entries(sort);
+            if (sort_entries.length > 0) {
+                if (sort_entries.length > 1) {
+                    throw new Error('Cannot sort document by more than one field.');
                 }
 
                 let sort_field;
-                [ sort_field, sort_direction ] = order_entries[0];
+                [ sort_field, sort_direction ] = sort_entries[0];
 
-                inter_keys.push(
-                    this._getRedisKeyIndex(sort_field),
-                );
-                inter_weights.push(1);
+                sort_key = this._getRedisKeyIndex(sort_field);
             }
         }
 
-        if (0 === inter_keys.length) {
-            inter_keys.push(`${this._redis_prefix}:${REDIS_SUBKEY_DOCUMENT_IDS}`);
-            inter_weights.push(0);
+        const is_result_sorted = typeof sort_key === 'string';
+
+        const tmp_key_result = temporaryKeys.create();
+        if (inter.length > 0) {
+            multi.EVALSHA(
+                this._scripts.FIND_INTER,
+                0,
+                tmp_key_result,
+                sort_key ?? '',
+                ...inter,
+            );
+
+            timing.add('main-intersection');
         }
+
+        // if (0 === inter_keys.length) {
+        //     inter_keys.push(`${this._redis_prefix}:${REDIS_SUBKEY_DOCUMENT_IDS}`);
+        //     inter_weights.push(0);
+        // }
 
         // console.log('inter_keys', inter_keys);
         // console.log('inter_weights', inter_weights);
 
-        const tmp_key_result = temporaryKeys.create();
+        // const tmp_key_result = temporaryKeys.create();
 
-        multi.ZINTERSTORE(
-            tmp_key_result,
-            inter_keys.length,
-            ...inter_keys,
-            'WEIGHTS',
-            ...inter_weights,
-        );
+        // multi.ZINTERSTORE(
+        //     tmp_key_result,
+        //     inter_keys.length,
+        //     ...inter_keys,
+        //     'WEIGHTS',
+        //     ...inter_weights,
+        // );
+
+        // timing.add('main-intersection');
 
         if (typeof options?.zrange_rank === 'number') {
             multi.ZRANGE(
@@ -379,6 +464,8 @@ class RedisStore {
                 tmp_key_result,
                 options.zrange_rank_percent,
             ).as('number');
+
+            timing.add('find-percentile');
         }
         else {
             const zrange_args = [];
@@ -406,16 +493,24 @@ class RedisStore {
             }
 
             if (typeof offset === 'number' && typeof count === 'number') {
+                count = count >= 0 ? count : -1;
                 zrange_args.push(
                     'LIMIT',
                     offset,
-                    count >= 0 ? count : -1,
+                    count,
                 );
             }
 
             // counting documents
             if (true === options?.count) {
-                multi.ZCARD(tmp_key_result).as('number');
+                if (is_result_sorted) {
+                    multi.ZCARD(tmp_key_result).as('number');
+                }
+                else {
+                    multi.SCARD(tmp_key_result).as('number');
+                }
+
+                timing.add('count');
             }
             // deleting documents
             else if (true === options?.delete) {
@@ -427,31 +522,52 @@ class RedisStore {
                     ...zrange_args,
                     ...this._getIndexBulk(),
                 ).as('number');
+
+                timing.add('delete');
             }
             // getting the result
             else {
                 const return_field = options?.return_field ?? '';
                 const result_key = (return_field.length > 0) ? 'raw' : 'documents_raw';
 
-                multi.EVALSHA(
-                    this._scripts.FIND_GET,
-                    0,
-                    return_field,
-                    tmp_key_result,
-                    ...zrange_args,
-                ).as(result_key);
+                if (is_result_sorted) {
+                    console.log('zrange_args', zrange_args);
+                    multi.EVALSHA(
+                        this._scripts.FIND_GET,
+                        0,
+                        return_field,
+                        'Z',
+                        tmp_key_result,
+                        ...zrange_args,
+                    ).as(result_key);
+                }
+                else {
+                    multi.EVALSHA(
+                        this._scripts.FIND_GET,
+                        0,
+                        return_field,
+                        'S',
+                        tmp_key_result,
+                        count,
+                    ).as(result_key);
+                }
+
+                timing.add('find-get');
             }
         }
 
-        multi.DEL(...temporaryKeys.keys);
+        for (const key of temporaryKeys.keys) {
+            multi.PEXPIRE(key, 1);
+        }
 
-        // const hrtime = process.hrtime();
+        timing.add('cleanup');
+
         const result = await multi.EXEC();
-        // {
-        //     const [ s, ns ] = process.hrtime(hrtime);
-        //     console.log(Number.parseFloat(((s * 1e3) + (ns / 1e6)).toFixed(3)), 'ms');
-        // }
         // console.log('result', result);
+
+        console.log(
+            timing.result(result),
+        );
 
         if (result.raw) {
             return result.raw;
@@ -501,11 +617,11 @@ class RedisStore {
     }
 
     async max (field, filter) {
-        const order = {};
+        const sort = {};
         const options = {};
 
         if (true === this._indexes_by_type.get(INDEX.RANGE)?.has(field)) {
-            order[field] = 1;
+            sort[field] = 1;
             options.zrange_rank = -1;
         }
         else {
@@ -515,7 +631,7 @@ class RedisStore {
         const data = await this._find(
             {
                 filter,
-                order,
+                sort,
                 count: -1,
             },
             options,
@@ -532,11 +648,11 @@ class RedisStore {
     }
 
     async min (field, filter) {
-        const order = {};
+        const sort = {};
         const options = {};
 
         if (true === this._indexes_by_type.get(INDEX.RANGE)?.has(field)) {
-            order[field] = 1;
+            sort[field] = 1;
             options.zrange_rank = 0;
         }
         else {
@@ -546,7 +662,7 @@ class RedisStore {
         const data = await this._find(
             {
                 filter,
-                order,
+                sort,
                 count: -1,
             },
             options,
@@ -560,6 +676,26 @@ class RedisStore {
         else {
             return data;
         }
+    }
+
+    async sum (field, filter) {
+        const values = await this._find(
+            {
+                filter,
+                count: -1,
+            },
+            {
+                return_field: field,
+            },
+        );
+
+        let sum = 0;
+
+        for (const value of values) {
+            sum += Number.parseFloat(value);
+        }
+
+        return sum;
     }
 
     async avg (field, filter) {
@@ -584,11 +720,11 @@ class RedisStore {
     }
 
     /* async */ percentile (field, threshold, filter) {
-        const order = {};
+        const sort = {};
         const options = {};
 
         if (true === this._indexes_by_type.get(INDEX.RANGE)?.has(field)) {
-            order[field] = 1;
+            sort[field] = 1;
             options.zrange_rank_percent = threshold;
         }
         else {
@@ -598,7 +734,7 @@ class RedisStore {
         return this._find(
             {
                 filter,
-                order,
+                sort,
                 count: -1,
             },
             options,

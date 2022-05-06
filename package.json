@@ -1,6 +1,6 @@
 {
   "name": "@kirick/redis-store",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "description": "Store you data in Redis and get it using simple indexes.",
   "main": "main.js",
 	"engines": {
