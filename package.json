@@ -1,26 +1,26 @@
 {
-  "name": "@kirick/redis-store",
-  "version": "0.1.0-beta.3",
-  "description": "Store you data in Redis and get it using simple indexes.",
-  "main": "main.js",
+	"name": "@kirick/redis-store",
+	"version": "0.1.0-beta.3",
+	"description": "Store you data in Redis and get it using simple indexes.",
+	"main": "main.js",
 	"engines": {
 		"node": ">=10.0.0"
 	},
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kirick13/redis-store.git"
-  },
-  "keywords": [
-    "redis",
-    "store",
-    "index",
-    "db",
-    "logs"
-  ],
-  "author": "Daniil Kirichenko (https://twitter.com/kirickme)",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/kirick13/redis-store/issues"
-  },
-  "homepage": "https://github.com/kirick13/redis-store#readme"
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kirick13/redis-store.git"
+	},
+	"keywords": [
+		"redis",
+		"store",
+		"index",
+		"db",
+		"logs"
+	],
+	"author": "Daniil Kirichenko (https://twitter.com/kirickme)",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/kirick13/redis-store/issues"
+	},
+	"homepage": "https://github.com/kirick13/redis-store#readme"
 }
